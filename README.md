@@ -1,42 +1,84 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/Database%20Architect-%234A90E2?style=for-the-badge&labelColor=1a1a1a&logo=postgresql">
+  <img alt="Database Architect" src="https://img.shields.io/badge/Database%20Architect-%234A90E2?style=for-the-badge&labelColor=ffffff&logo=postgresql">
+</picture>
+
 # Database Architect — OpenCode Skill
 
-> 全栈数据库架构专家技能 — Schema 设计、查询优化、索引策略、ORM 调优、迁移工程、性能剖析、安全加固
+> Full-stack database architecture expertise for OpenCode AI. Schema design, query optimization, indexing strategy, ORM tuning, migration engineering, performance profiling, security hardening, capacity planning, and disaster recovery.
 
-## 能力覆盖
+**English** | [中文](./README.zh-CN.md)
 
-- **数据库选型** — PostgreSQL / MySQL / MongoDB / Redis / SQLite / ClickHouse 等 15+ 种数据库的决策树
-- **Schema 设计** — 范式化 vs 反范式化、命名规范、数据类型最佳实践、反模式清单
-- **查询优化** — EXPLAIN 分析、查询重写、分页优化、子查询转换
-- **索引策略** — B-tree / GIN / GiST / BRIN / 部分索引 / 覆盖索引，复合索引列序设计
-- **ORM 优化** — N+1 检测与修复、批量操作、裸 SQL 降级策略（Prisma / ActiveRecord / SQLAlchemy）
-- **迁移工程** — 零宕机迁移模式、回滚策略、回填脚本模板
-- **性能调优** — PostgreSQL 配置参数、连接池计算、多级缓存架构
-- **安全加固** — TLS / RLS / 加密 / 审计 / SQL 注入防御
-- **架构模式** — 读写分离 / 分片 / CQRS / 多租户
-- **可观测性** — 关键指标、告警阈值、诊断查询
-- **灾备** — 全量+WAL 归档、RPO/RTO 分级规划
+---
 
-## 使用
+## Coverage
 
-当涉及数据库相关的任务时，OpenCode 会自动加载此 skill。你也可以手动加载：
+| Area | Details |
+|------|---------|
+| **Database Selection** | Decision tree for 20+ databases: PostgreSQL, MySQL, MongoDB, Redis, SQLite, ClickHouse, DuckDB, CockroachDB, DynamoDB |
+| **Schema Design** | Normalization vs denormalization, naming conventions, data type best practices, anti-pattern catalog |
+| **Indexing Strategy** | B-tree / GIN / GiST / BRIN / Partial / Covering indexes, composite index column order |
+| **Query Optimization** | EXPLAIN analysis, query rewriting, keyset pagination, subquery transformation |
+| **Transaction & MVCC** | Isolation levels deep-dive, MVCC internals, snapshot management, common pitfalls |
+| **ORM Optimization** | N+1 detection & fix, batch operations, raw SQL fallback (Prisma / ActiveRecord / SQLAlchemy) |
+| **Deadlock Handling** | Root causes, prevention patterns, detection SQL, retry template |
+| **Migration Engineering** | 5 zero-downtime patterns, rollback strategies, backfill script, lock analysis |
+| **Performance Tuning** | PostgreSQL 16+ config parameters, connection pooling (PgBouncer), multi-level caching |
+| **Security Hardening** | TLS / RLS / encryption at rest / audit logging / SQL injection prevention / secrets management |
+| **Architecture Patterns** | Read replicas / sharding (hash/range/directory) / CQRS / multi-tenant (4 strategies) |
+| **Database Testing** | Unit vs integration tests, Testcontainers, CI pipeline patterns, performance regression tests |
+| **Connection Management** | 5 languages × 5 databases connection string templates, driver recommendations, pooling |
+| **Capacity Planning** | Growth estimation formulas, sizing tiers (Tiny to X-Large), scaling signals |
+| **Observability** | 8 key metrics, alert thresholds, diagnostic queries |
+| **Backup & DR** | Full + WAL archive, RPO/RTO planning (3 tiers) |
 
+---
+
+## Quick Start
+
+```bash
+# Clone to your OpenCode skills directory
+git clone https://github.com/ricky-theseus/database-architect.git
+
+# Or copy directly
+cp -r database-architect ~/.config/opencode/skills/
+```
+
+Then restart OpenCode. The skill auto-loads when you mention any database-related topic.
+
+**Manual load:**
 ```
 /skill database-architect
 ```
 
-## 安装
+---
 
-```bash
-# 克隆到 OpenCode skills 目录
-git clone https://github.com/<your-username>/database-architect.git
-# 或复制到本地 skills 目录
-cp -r database-architect ~/.config/opencode/skills/
-```
+## Documentation
 
-## 测试
+- [Getting Started Guide](./docs/en/getting-started.md) — Database architecture from zero
+- [SQL Optimization Deep Dive](./docs/en/sql-optimization.md) — EXPLAIN mastery
+- [Index Design Guide](./docs/en/index-design.md) — Index types, selection, tuning
+- [Migration Handbook](./docs/en/migration-handbook.md) — Zero-downtime complete guide
+- [Database Selection Guide](./docs/en/database-selection.md) — 20+ scenario analysis
 
-参见 [TEST_CASES.md](./TEST_CASES.md) 获取 10 个覆盖主要场景的测试用例。
+---
+
+## Testing
+
+See [TEST_CASES.md](./TEST_CASES.md) for 15+ test scenarios covering all major areas.
+
+---
+
+## Changelog
+
+| Version | Date | Changes |
+|---------|------|---------|
+| v1.0.0 | 2026-06-25 | Initial release: 12 core sections |
+| v1.1.0 | 2026-06-25 | Added: Transaction & MVCC, Testing Strategy, Deadlocks, Connection Matrix, Capacity Planning, Case Studies |
+| v1.2.0 | 2026-06-25 | Extended: ClickHouse / DuckDB / CockroachDB / DynamoDB deep dives, multi-language README, teaching docs |
+
+---
 
 ## License
 
-MIT
+MIT © [ricky-theseus](https://github.com/ricky-theseus)

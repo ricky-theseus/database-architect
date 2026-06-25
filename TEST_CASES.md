@@ -40,6 +40,26 @@
 **Input**: "用户表已经 5 亿行了，单库扛不住，怎么拆分？"
 **Expected**: Discuss hash-based vs range-based sharding. Mention Vitess/Citus. Cover resharding complexity and query routing.
 
+## TC11: Transaction Isolation
+**Input**: "两个事务同时扣库存，结果多扣了，怎么解决？"
+**Expected**: Explain lost update problem. Show `SELECT ... FOR UPDATE` (pessimistic) and version column (optimistic) solutions. Mention REPEATABLE READ vs SERIALIZABLE tradeoffs.
+
+## TC12: Deadlock Debugging
+**Input**: "PostgreSQL 日志一直报 deadlock detected，怎么查怎么修？"
+**Expected**: Show deadlock detection queries (`pg_blocking_pids`). Explain lock ordering. Provide retry template with exponential backoff.
+
+## TC13: MVCC Bloat
+**Input**: "我的表占 100 GB，数据只有 10 GB，剩下的哪去了？"
+**Expected**: Identify MVCC bloat from long transactions / frequent updates. Recommend tuning autovacuum (`scale_factor`, `cost_limit`). Show bloat detection query and `pgstattuple`.
+
+## TC14: Database Testing
+**Input**: "怎么自动化测试数据库迁移和查询性能？"
+**Expected**: Recommend Testcontainers for disposable DB. Show CI pipeline with migration test + EXPLAIN assertion. Mention pgTAP and pytest patterns.
+
+## TC15: ClickHouse vs PostgreSQL for Analytics
+**Input**: "我要做一个实时报表系统，查过去一年几亿行数据，用 PG 还是 ClickHouse？"
+**Expected**: Compare column-oriented vs row-oriented. Discuss ClickHouse MergeTree + materialized views vs PostgreSQL partitioning + BRIN. Recommend ClickHouse for analytics, PG for transactional. Cover the hybrid approach (PG for writes, CH for reads via CDC).
+
 ## Evaluation Criteria
 | Criteria | Weight | Pass |
 |----------|--------|------|

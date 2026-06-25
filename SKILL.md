@@ -9,8 +9,8 @@ description: >
 license: MIT
 metadata:
   author: rick
-  version: 1.0.0
-  tags: [database, sql, nosql, orm, migration, performance, architecture]
+  version: 1.2.0
+  tags: [database, sql, nosql, orm, migration, performance, architecture, transaction, testing, deadlock]
 ---
 
 # Database Architect
@@ -428,6 +428,35 @@ WHERE NOT granted;
 - **Full-text search**: FTS5 extension
 - **Limitations**: no ALTER COLUMN, no concurrent writes
 
+### ClickHouse
+- **Column-oriented** — ideal for OLAP / analytics on large datasets
+- **MergeTree engine** — default; partition by date, order by primary key
+- **Materialized views** — push-down aggregations during INSERT, not on SELECT
+- **JOIN behavior** — right table must fit in memory or use `join_algorithm='parallel_hash'`
+- **Limitations**: no point-updates, no transactions, high CPU on joins
+
+### DuckDB
+- **In-process OLAP** — like SQLite for analytical queries
+- **Columnar engine** — runs queries on Pandas/Parquet directly
+- **Best for**: Data science, ad-hoc analytics, ETL pipelines
+- **Zero-config** — no server, no config files
+- **Limitations**: not designed for concurrent access, no network protocol
+
+### CockroachDB
+- **PostgreSQL-wire compatible** — most PG drivers work
+- **Auto-sharding** — range-based with automatic rebalancing
+- **Survivability** — survives entire AZ failure with `--locality` settings
+- **Consistency** — SERIALIZABLE isolation by default (strong)
+- **Limitations**: higher latency than single-node PG (distributed overhead), limited extensions
+
+### DynamoDB (NoSQL)
+- **Single-digit millisecond** at any scale (if modeled right)
+- **Access patterns first** — design tables around query patterns, not normalization
+- **Primary key**: partition key (hash) + optional sort key (range)
+- **GSI / LSI** — global/local secondary indexes (eventually consistent)
+- **Limitations**: no joins, no transactions across partitions, 1 MB query limit
+- **Hot keys**: uneven access patterns cause throttling — use write sharding
+
 ---
 
 ## 12. Backup & Disaster Recovery
@@ -447,6 +476,230 @@ Full backup (daily) ──→ WAL archive (continuous) ──→ Point-in-time r
 | Gold | 0-5 min | < 30 min | Synchronous replicas + WAL archive |
 | Silver | 15 min | < 4 hr | Async replica + daily backup |
 | Bronze | 24 hr | < 24 hr | Daily backup only |
+
+---
+
+## 13. Transaction Isolation & MVCC
+
+### Isolation Levels
+| Level | Dirty Read | Non-Repeatable Read | Phantom Read | Snapshot | Use Case |
+|-------|-----------|---------------------|--------------|----------|----------|
+| `READ UNCOMMITTED` | Possible | Possible | Possible | No | Approx counters, no real use |
+| `READ COMMITTED` | Safe | Possible | Possible | Per-statement | Default in PG/MySQL — safe enough |
+| `REPEATABLE READ` | Safe | Safe | Possible (PG: safe) | Per-transaction | Reporting, financial audits |
+| `SERIALIZABLE` | Safe | Safe | Safe | — | Banking, critical transactions |
+
+### MVCC Internals
+- **PostgreSQL**: Each row has `xmin` (creating transaction) / `xmax` (deleting/updating transaction). Old versions live in the same table until `VACUUM` reclaims them. `SELECT` sees only rows visible at the transaction's snapshot.
+- **MySQL (InnoDB)**: Undo log stores old versions in the rollback segment. The `read view` determines visibility at transaction start.
+- **Snapshot too old**: Long-running queries on busy tables hit "snapshot too old" (ORA-01555 in Oracle, error in PG with `old_snapshot_threshold`). Mitigate with `hot_standby_feedback` on replicas.
+
+### Common MVCC Pitfalls
+- **Bloating** — long transactions prevent `VACUUM` from reclaiming dead tuples
+- **IDLE in transaction** — holds snapshot, blocks cleanup
+- **DDL + MVCC** — `ALTER TABLE` needs `ACCESS EXCLUSIVE` lock, waits for all active snapshots
+
+### When to Lower Isolation
+```
+Default: READ COMMITTED → good for 95% of workloads
+SERIALIZABLE → only when you can't use
+  SELECT ... FOR UPDATE
+  or application-level optimistic locking
+```
+
+---
+
+## 14. Database Testing Strategy
+
+### Unit Tests (no database)
+- Test query construction logic, not the actual execution
+- Mock the database connection / ORM session
+- Use in-memory databases (SQLite :memory:) for quick feedback
+
+### Integration Tests (real database)
+```python
+# Use Testcontainers for disposable DB instances
+from testcontainers.postgres import PostgresContainer
+
+with PostgresContainer("postgres:16") as pg:
+    conn = psycopg2.connect(pg.get_connection_url())
+    # Run migrations, seed data, test queries
+```
+
+### What to Test
+| Layer | What | Tooling |
+|-------|------|---------|
+| Schema | Constraints, defaults, migration up/down | Flyway, Alembic, Prisma |
+| Query | EXPLAIN plan, row count, correctness | pytest, pgTAP |
+| Index | Whether the optimizer uses them | `EXPLAIN (ANALYZE)` in tests |
+| Migration | Rollback, data preservation | Test in CI with fresh DB |
+| Concurrency | Deadlocks, race conditions | Threaded test harness |
+| Backup | Restore works | Restore to temp instance |
+
+### CI Pipeline Pattern
+```yaml
+test-db:
+  services:
+    postgres:
+      image: postgres:16
+      env: POSTGRES_PASSWORD=test
+  steps:
+    - run: migrate up
+    - run: seed test data
+    - run: pytest tests/db/
+    - run: migrate down  # verify rollback
+```
+
+### Performance Regression Tests
+- Run every query against a fixed dataset
+- Assert `EXPLAIN` shows no seq scans on large tables
+- Measure p95 latency, fail if >2x baseline
+
+---
+
+## 15. Deadlock Detection & Prevention
+
+### What Causes Deadlocks
+```
+Transaction A: UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+Transaction B: UPDATE accounts SET balance = balance - 100 WHERE id = 2;
+Transaction A: UPDATE accounts SET balance = balance - 100 WHERE id = 2;  -- waits for B
+Transaction B: UPDATE accounts SET balance = balance - 100 WHERE id = 1;  -- waits for A
+→ DEADLOCK
+```
+
+### Prevention Patterns
+1. **Lock ordering** — always access rows in the same order (by id, alphabetically)
+2. **Short transactions** — minimize the window for deadlocks
+3. **Index all FK columns** — row-level locks escalate without index
+4. **`NOWAIT` / `SKIP LOCKED`** — bail out instead of waiting
+5. **Retry logic** — deadlock victims should retry at the application layer
+
+### Detection (PostgreSQL)
+```sql
+-- View blocked queries
+SELECT blocked.pid AS blocked_pid,
+       blocking.pid AS blocking_pid,
+       blocked.query AS blocked_query,
+       blocking.query AS blocking_query,
+       now() - blocked.query_start AS blocked_duration
+FROM pg_stat_activity blocked
+JOIN pg_stat_activity blocking ON blocking.pid = ANY(
+  pg_blocking_pids(blocked.pid)
+);
+
+-- Log deadlocks automatically
+ALTER SYSTEM SET log_lock_waits = on;
+ALTER SYSTEM SET deadlock_timeout = '1s';  -- log all deadlocks
+```
+
+### Retry Template
+```python
+import time
+from psycopg2.errors import SerializationFailure
+
+def execute_with_retry(cursor, sql, params, retries=3):
+    for attempt in range(retries):
+        try:
+            cursor.execute(sql, params)
+            return
+        except SerializationFailure:
+            if attempt == retries - 1:
+                raise
+            time.sleep(0.1 * (2 ** attempt))  # exponential backoff
+```
+
+---
+
+## 16. Connection Strings & Driver Matrix
+
+### By Language × Database
+
+| Language | PostgreSQL | MySQL | MongoDB | Redis | SQLite |
+|----------|-----------|-------|---------|-------|--------|
+| **Node.js** | `pg` / `postgres.js` | `mysql2` | `mongoose` / `mongodb` | `ioredis` | `better-sqlite3` |
+| **Python** | `psycopg2` / `asyncpg` | `pymysql` / `aiomysql` | `pymongo` / `motor` | `redis-py` / `aioredis` | `sqlite3` (stdlib) |
+| **Go** | `pgx` / `lib/pq` | `go-sql-driver/mysql` | `mongo-go-driver` | `go-redis` | `modernc.org/sqlite` |
+| **Rust** | `sqlx` / `tokio-postgres` | `sqlx` / `mysql_async` | `mongodb` | `redis-rs` | `rusqlite` |
+| **Java** | `org.postgresql` | `com.mysql.cj` | `mongodb-driver-sync` | `jedis` / `lettuce` | `org.xerial:sqlite-jdbc` |
+
+### Connection String Templates
+```
+PostgreSQL:  postgresql://user:password@host:5432/dbname?sslmode=require&pool_min=2&pool_max=10
+MySQL:       mysql://user:password@host:3306/dbname?ssl-mode=REQUIRED&pool-max=10
+MongoDB:     mongodb://user:password@host:27017/dbname?maxPoolSize=10&w=majority
+Redis:       redis://:password@host:6379/0?pool_size=10
+SQLite:      sqlite:///path/to/db.sqlite?mode=rwc&journal_mode=WAL
+```
+
+### Best Practices
+1. **Never hardcode** — use environment variables or a vault
+2. **Connection timeout** — set `connect_timeout=5` to fail fast
+3. **Pool size** — align with DB `max_connections` ÷ number of app instances
+4. **SSL** — always `sslmode=require` or `verify-full` in production
+5. **Application name** — set `application_name=$APP` to identify in `pg_stat_activity`
+
+---
+
+## 17. Capacity Planning & Sizing
+
+### Growth Estimation Formula
+```
+Storage per year = (row_size × row_count × growth_rate × replication_factor) + indexes
+```
+
+### Quick Sizing Rules
+| Scale | Users | DB Size | Instance | Config |
+|-------|-------|---------|----------|--------|
+| Tiny | < 1K | < 1 GB | 1 vCPU, 1 GB RAM | SQLite / PG default |
+| Small | 1K–10K | 1–50 GB | 2 vCPU, 4 GB RAM | Tune shared_buffers, work_mem |
+| Medium | 10K–100K | 50–500 GB | 4 vCPU, 16 GB RAM | Read replica + PgBouncer |
+| Large | 100K–1M | 500 GB–5 TB | 8 vCPU, 32 GB RAM | Connection pooling, caching |
+| X-Large | 1M+ | 5 TB+ | 16+ vCPU, 64+ GB RAM | Sharding, CQRS, CDN |
+
+### When to Scale
+| Signal | Action |
+|--------|--------|
+| CPU > 80% sustained | Vertical scale (bigger instance) |
+| Disk IOPS > 80% | Faster storage (NVMe) or horizontal scale |
+| Connections > 80% of max | Add PgBouncer or increase `max_connections` |
+| Replication lag > 30s | Upgrade replica instance or reduce load |
+| Query p99 > 1s | Optimize queries, add caching, or scale |
+| Index rebuild takes > 1hr | Use `CONCURRENTLY`, schedule maintenance |
+
+---
+
+## 18. Real-World Case Studies
+
+### Case A: SaaS Platform Migration (MySQL → PostgreSQL)
+**Problem**: 500 GB MySQL 5.7, nightly `REPLACE INTO` jobs causing 4h downtime
+**Solution**: 
+1. Set up logical replication via `pg_chameleon`
+2. Dual-write for 1 week (both MySQL + PG)
+3. Cutover: 15-min read-only window, verify row counts
+4. Result: nightly jobs now take 20 min, no downtime
+**Lesson**: Always test cutover under production load first
+
+### Case B: E-Commerce Inventory Hotspot
+**Problem**: Flash sales cause row lock contention on `inventory` table
+**Symptoms**: `LOG: process 1234 still waiting for ShareLock` → dead timeouts
+**Root Cause**: 10,000 concurrent updates on the same sku row
+**Solutions Considered**:
+- ❌ `SERIALIZABLE` — worse contention
+- ✅ Redis cache + async decrement (eventual consistency, 1s delay)
+- ✅ Shard sku by warehouse (+1 for the hot sku)
+- ✅ `pg_advisory_xact_lock` with retry
+**Result**: 95th percentile latency dropped from 12s to 40ms
+
+### Case C: Time-Series Bloat
+**Problem**: 2 TB table of IoT sensor readings, 90% is "dead tuples"
+**Root Cause**: Frequent `UPDATE` on a `last_seen` timestamp + no autovacuum tuning
+**Fix**:
+1. Change `last_seen` to a separate table (1 row per device, not per reading)
+2. Partition readings by month (`PARTITION BY RANGE (ts)`)
+3. Tune autovacuum: `autovacuum_vacuum_scale_factor = 0.01`, `autovacuum_vacuum_cost_limit = 2000`
+4. Set `fillfactor = 70` on the high-churn table
+**Result**: Table size dropped to 200 GB, query time -80%
 
 ---
 
