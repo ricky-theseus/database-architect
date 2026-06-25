@@ -73,9 +73,32 @@ npm install -g @ricky-theseus/database-architect
 
 ---
 
+## 🛠 脚本工具
+
+开箱即用的数据库运维脚本：
+
+| 脚本 | 功能 | 用法 |
+|------|------|------|
+| [`scripts/diagnostics.sql`](./scripts/diagnostics.sql) | 14 项健康检查：慢查询、锁、bloat、连接数、缓存命中率 | `psql -U postgres -d yourdb -f scripts/diagnostics.sql` |
+| [`scripts/backfill.py`](./scripts/backfill.py) | 零宕机列回填，批量 + 节流 | `python scripts/backfill.py --table users --column phone --value "''"` |
+| [`scripts/migration-check.sql`](./scripts/migration-check.sql) | 迁移前安全检测：长事务、阻塞锁、复制延迟 | `psql -U postgres -d yourdb -f scripts/migration-check.sql` |
+
+## 🤖 多 Agent 适配
+
+本 skill 支持所有主流 AI 编程助手，复制对应适配器文件到项目即可：
+
+| Agent | 文件 | 配置方法 |
+|-------|------|---------|
+| **OpenCode** | [`adapters/opencode/SKILL.md`](./adapters/opencode/SKILL.md) | 软链接到 `~/.config/opencode/skills/` |
+| **Claude Code** | [`adapters/CLAUDE.md`](./adapters/CLAUDE.md) | 复制到项目根目录命名为 `CLAUDE.md` |
+| **Cursor** | [`adapters/cursor/.cursorrules`](./adapters/cursor/.cursorrules) | 复制到项目根目录 |
+| **GitHub Copilot** | [`adapters/copilot/.github/copilot-instructions.md`](./adapters/copilot/.github/copilot-instructions.md) | 复制到仓库的 `.github/` 目录 |
+
+详细配置见 [`adapters/README.zh-CN.md`](./adapters/README.zh-CN.md)
+
 ## 🧪 测试
 
-参见 [TEST_CASES.md](./TEST_CASES.md) 获取覆盖 15+ 个场景的测试用例。
+参见 [TEST_CASES.md](./TEST_CASES.md) 获取覆盖 15 个场景的测试用例。
 
 ---
 

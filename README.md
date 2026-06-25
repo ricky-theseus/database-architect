@@ -63,9 +63,34 @@ Then restart OpenCode. The skill auto-loads when you mention any database-relate
 
 ---
 
+## Scripts
+
+Ready-to-run tools for everyday database operations:
+
+| Script | What It Does | Run It |
+|--------|-------------|--------|
+| [`scripts/diagnostics.sql`](./scripts/diagnostics.sql) | 14-point health check — slow queries, bloat, locks, connections, cache ratio | `psql -U postgres -d yourdb -f scripts/diagnostics.sql` |
+| [`scripts/backfill.py`](./scripts/backfill.py) | Zero-downtime column backfill with batching + throttle | `python scripts/backfill.py --table users --column phone --value "''"` |
+| [`scripts/migration-check.sql`](./scripts/migration-check.sql) | Pre-migration safety check — long txns, blocking locks, replication lag | `psql -U postgres -d yourdb -f scripts/migration-check.sql` |
+
+## Multi-Agent Support
+
+This skill works with every major AI coding tool. Copy the right adapter into your project:
+
+| Agent | File | Setup |
+|-------|------|-------|
+| **OpenCode** | [`adapters/opencode/SKILL.md`](./adapters/opencode/SKILL.md) | Symlink to `~/.config/opencode/skills/` |
+| **Claude Code** | [`adapters/CLAUDE.md`](./adapters/CLAUDE.md) | Copy to project root as `CLAUDE.md` |
+| **Cursor** | [`adapters/cursor/.cursorrules`](./adapters/cursor/.cursorrules) | Copy to project root |
+| **GitHub Copilot** | [`adapters/copilot/.github/copilot-instructions.md`](./adapters/copilot/.github/copilot-instructions.md) | Copy to `.github/` in your repo |
+
+See [`adapters/README.md`](./adapters/README.md) for detailed setup per agent.
+
+---
+
 ## Testing
 
-See [TEST_CASES.md](./TEST_CASES.md) for 15+ test scenarios covering all major areas.
+See [TEST_CASES.md](./TEST_CASES.md) for 15 test scenarios covering all major areas.
 
 ---
 
