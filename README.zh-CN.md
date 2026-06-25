@@ -28,6 +28,10 @@
 | **架构模式** | 读写分离 / 分片（Hash/Range/Directory）/ CQRS / 多租户 4 种方案 |
 | **数据库测试** | 单元测试、集成测试（Testcontainers）、CI 管道、性能回归测试 |
 | **连接管理** | 5 种语言 × 5 种数据库的连接串模板，驱动推荐，池化策略 |
+| **Schema 生成** | 🆕 从需求到生产级 SQL — 完整 schema、索引、RLS、数据字典 |
+| **Schema 模板** | 🆕 领域蓝本：多租户 SaaS、电商、CMS、IoT — 开箱即用 |
+| **迁移自动生成** | 🆕 从 schema diff 到迁移 SQL，含 UP/DOWN、零宕机规则 |
+| **Schema 审计** | 🆕 自动 schema 审查，打分 + 优先级排序 + 自动生成修复迁移 |
 | **容量规划** | 增长估算公式、分级规格表（Tiny 到 X-Large）、扩容信号 |
 | **可观测性** | 8 个关键指标 + 告警阈值 + 诊断查询 |
 | **灾备** | 全量+WAL 归档、RPO/RTO 三级规划 |
@@ -73,6 +77,19 @@ npm install -g @ricky-theseus/database-architect
 
 ---
 
+## 📦 Schema 模板
+
+生产级 SQL 蓝本，开箱即用：
+
+| 模板 | 领域 | 文件 |
+|------|------|------|
+| 🏢 多租户 SaaS | RLS 租户隔离、功能开关、审计日志 | [`templates/saas.sql`](./templates/saas.sql) |
+| 🛒 电商 | 商品、库存、订单、支付、分类 | [`templates/ecommerce.sql`](./templates/ecommerce.sql) |
+| 📝 CMS / 博客 | 作者、全文搜索、标签、评论 | [`templates/cms.sql`](./templates/cms.sql) |
+| 📡 IoT / 时序 | 分区 readings、设备注册、自动分区维护 | [`templates/iot.sql`](./templates/iot.sql) |
+
+告诉 AI "生成一个电商数据库"或"给我一个 SaaS schema"——它会以这些模板为起点，按你的需求定制。
+
 ## 🛠 脚本工具
 
 开箱即用的数据库运维脚本：
@@ -109,6 +126,7 @@ npm install -g @ricky-theseus/database-architect
 | v1.0.0 | 2026-06-25 | 初始发布：12 个核心章节 |
 | v1.1.0 | 2026-06-25 | 新增：事务 & MVCC、测试策略、死锁处理、连接串矩阵、容量规划、实战案例 |
 | v1.2.0 | 2026-06-25 | 扩展：ClickHouse / DuckDB / CockroachDB / DynamoDB 深度指南、多语言 README、教学文档 |
+| v2.0.0 | 2026-06-26 | **Meta 层**：Schema 生成协议、领域模板、迁移生成、Schema 审计。4 个领域 SQL 模板 |
 
 ---
 

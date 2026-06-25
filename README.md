@@ -28,6 +28,10 @@
 | **Architecture Patterns** | Read replicas / sharding (hash/range/directory) / CQRS / multi-tenant (4 strategies) |
 | **Database Testing** | Unit vs integration tests, Testcontainers, CI pipeline patterns, performance regression tests |
 | **Connection Management** | 5 languages × 5 databases connection string templates, driver recommendations, pooling |
+| **Schema Generation** | 🆕 From requirements to production-ready SQL — full schema, indexes, RLS, data dictionary |
+| **Schema Templates** | 🆕 Domain blueprints: multi-tenant SaaS, e-commerce, CMS, IoT — ready to customize |
+| **Migration Generation** | 🆕 From schema diff to migration SQL with UP/DOWN, zero-downtime rules |
+| **Schema Audit** | 🆕 Automated schema review with scoring, prioritized fixes, and auto-migration generation |
 | **Capacity Planning** | Growth estimation formulas, sizing tiers (Tiny to X-Large), scaling signals |
 | **Observability** | 8 key metrics, alert thresholds, diagnostic queries |
 | **Backup & DR** | Full + WAL archive, RPO/RTO planning (3 tiers) |
@@ -62,6 +66,19 @@ Then restart OpenCode. The skill auto-loads when you mention any database-relate
 - [Database Selection Guide](./docs/en/database-selection.md) — 20+ scenario analysis
 
 ---
+
+## Schema Templates
+
+Production-ready SQL blueprints for common domains — ready to customize:
+
+| Template | Domain | File |
+|----------|--------|------|
+| 🏢 Multi-Tenant SaaS | Tenant isolation via RLS, feature flags, audit log | [`templates/saas.sql`](./templates/saas.sql) |
+| 🛒 E-Commerce | Products, inventory, orders, payments, categories | [`templates/ecommerce.sql`](./templates/ecommerce.sql) |
+| 📝 CMS / Blog | Authors, posts with full-text search, tags, comments | [`templates/cms.sql`](./templates/cms.sql) |
+| 📡 IoT / Time-Series | Partitioned readings, device registry, auto-partition maintenance | [`templates/iot.sql`](./templates/iot.sql) |
+
+Tell the AI "generate an e-commerce database" or "give me a SaaS schema" — it will use these templates as starting points and customize them for your needs.
 
 ## Scripts
 
@@ -101,6 +118,7 @@ See [TEST_CASES.md](./TEST_CASES.md) for 15 test scenarios covering all major ar
 | v1.0.0 | 2026-06-25 | Initial release: 12 core sections |
 | v1.1.0 | 2026-06-25 | Added: Transaction & MVCC, Testing Strategy, Deadlocks, Connection Matrix, Capacity Planning, Case Studies |
 | v1.2.0 | 2026-06-25 | Extended: ClickHouse / DuckDB / CockroachDB / DynamoDB deep dives, multi-language README, teaching docs |
+| v2.0.0 | 2026-06-26 | **Meta-layer**: Schema Generation Protocol, Domain Templates, Migration Generation, Schema Audit. 4 domain SQL templates |
 
 ---
 

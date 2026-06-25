@@ -9,8 +9,8 @@ description: >
 license: MIT
 metadata:
   author: rick
-  version: 1.2.0
-  tags: [database, sql, nosql, orm, migration, performance, architecture, transaction, testing, deadlock]
+  version: 2.0.0
+  tags: [database, sql, nosql, orm, migration, performance, architecture, transaction, testing, deadlock, schema-generation, meta]
 ---
 
 # Database Architect
@@ -703,6 +703,399 @@ Storage per year = (row_size × row_count × growth_rate × replication_factor) 
 
 ---
 
+## 19. Schema Generation Protocol
+
+When the user asks you to generate a database schema from requirements, follow this protocol:
+
+### 19.1 Intake Phase
+
+Ask these questions (or infer from context) before writing a single `CREATE TABLE`:
+
+```
+1. Domain: What kind of system? (e-commerce / SaaS / CMS / IoT / chat / analytics)
+2. Scale: Current users? Expected growth in 12 months?
+3. Access patterns: Read-heavy? Write-heavy? Equal?
+4. Consistency needs: Strong (ACID) or eventual?
+5. Entities: What are the core nouns? (users, products, orders, ...)
+6. Relationships: One-to-many? Many-to-many? Polymorphic?
+7. Soft delete needed? Audit trail? Multi-tenancy?
+8. Deployment: Single region? Multi-region?
+9. Existing system? Migration from?
+```
+
+### 19.2 Output Format
+
+Every generated schema MUST include:
+
+```sql
+-- ============================================================
+-- Schema: <project-name>
+-- Domain: <domain>
+-- Generated: <date>
+-- ============================================================
+
+-- 1. Extensions
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
+
+-- 2. Enums (if needed)
+CREATE TYPE order_status AS ENUM ('pending', 'paid', 'shipped', 'cancelled');
+
+-- 3. Tables (with comments)
+CREATE TABLE users (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email       TEXT NOT NULL,
+    name        TEXT NOT NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+COMMENT ON TABLE users IS 'Platform users';
+
+-- 4. Indexes (listed separately, not inline)
+CREATE UNIQUE INDEX idx_users_email ON users (email);
+CREATE INDEX idx_users_created ON users (created_at DESC);
+
+-- 5. Foreign keys (listed separately for clarity)
+ALTER TABLE orders ADD CONSTRAINT fk_orders_user
+    FOREIGN KEY (user_id) REFERENCES users(id);
+
+-- 6. Row-Level Security (if multi-tenant)
+ALTER TABLE orders ENABLE ROW LEVEL SECURITY;
+CREATE POLICY orders_tenant_isolation ON orders
+    USING (tenant_id = current_setting('app.tenant_id')::BIGINT);
+```
+
+### 19.3 Accompanying Documents
+
+Every schema generation must produce these three deliverables:
+
+| Deliverable | Format | Content |
+|-------------|--------|---------|
+| **Schema SQL** | `.sql` | Full CREATE + INDEX + FK + RLS — production-ready |
+| **Migration** | `.sql` | ALTER statements from "blank" to this schema — works on empty DB |
+| **Data Dictionary** | markdown | Table descriptions, column meanings, example queries |
+
+### 19.4 Quality Gates
+
+Before declaring the schema "done":
+- [ ] Every table has a PRIMARY KEY (BIGINT or UUID)
+- [ ] Every FK column has an index
+- [ ] TIMESTAMPTZ not TIMESTAMP
+- [ ] NUMERIC for money, not FLOAT
+- [ ] TEXT not VARCHAR(n) unless domain constraint exists
+- [ ] NOT NULL on every column that should be required
+- [ ] CHECK constraints for status-like columns
+- [ ] RLS policy on every tenant-scoped table
+- [ ] `created_at` / `updated_at` on every table
+- [ ] No EAV, no polymorphic associations, no generic meta TEXT
+
+---
+
+## 20. Domain Schema Templates
+
+Complete schema blueprints for common domains. Use these as starting points — customize for specific requirements.
+
+### 20.1 Multi-Tenant SaaS
+```sql
+-- Tenants (top-level isolation boundary)
+CREATE TABLE tenants (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    slug        TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    plan        TEXT NOT NULL DEFAULT 'free' CHECK (plan IN ('free', 'pro', 'enterprise')),
+    settings    JSONB DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Shared users (login across tenants or per-tenant)
+CREATE TABLE users (
+    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id    BIGINT NOT NULL REFERENCES tenants(id),
+    email        TEXT NOT NULL,
+    name         TEXT NOT NULL,
+    role         TEXT NOT NULL DEFAULT 'member' CHECK (role IN ('admin', 'member', 'viewer')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE(tenant_id, email)
+);
+CREATE INDEX idx_users_tenant ON users (tenant_id);
+ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+CREATE POLICY users_tenant_isolation ON users USING (tenant_id = current_setting('app.tenant_id')::BIGINT);
+
+-- Feature flags per tenant
+CREATE TABLE tenant_features (
+    tenant_id   BIGINT NOT NULL REFERENCES tenants(id),
+    feature     TEXT NOT NULL,
+    enabled     BOOLEAN NOT NULL DEFAULT false,
+    PRIMARY KEY (tenant_id, feature)
+);
+```
+
+### 20.2 E-Commerce
+```sql
+CREATE TABLE products (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    sku         TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    description TEXT,
+    price       NUMERIC(12,2) NOT NULL CHECK (price >= 0),
+    cost        NUMERIC(12,2) CHECK (cost >= 0),
+    stock       INTEGER NOT NULL DEFAULT 0 CHECK (stock >= 0),
+    status      TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'draft', 'archived')),
+    category_id BIGINT REFERENCES categories(id),
+    metadata    JSONB DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_products_status ON products (status) WHERE status = 'active';
+CREATE INDEX idx_products_category ON products (category_id) WHERE category_id IS NOT NULL;
+CREATE INDEX idx_products_sku ON products (sku);
+
+CREATE TABLE orders (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    user_id     BIGINT NOT NULL REFERENCES users(id),
+    status      TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'paid', 'shipped', 'delivered', 'cancelled')),
+    total       NUMERIC(12,2) NOT NULL,
+    discount    NUMERIC(12,2) DEFAULT 0,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_orders_user_status ON orders (user_id, status);
+
+CREATE TABLE order_items (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    order_id    BIGINT NOT NULL REFERENCES orders(id),
+    product_id  BIGINT NOT NULL REFERENCES products(id),
+    quantity    INTEGER NOT NULL CHECK (quantity > 0),
+    unit_price  NUMERIC(12,2) NOT NULL,
+    total       NUMERIC(12,2) NOT NULL
+);
+CREATE INDEX idx_order_items_order ON order_items (order_id);
+```
+
+### 20.3 Content / CMS
+```sql
+CREATE TABLE authors (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    email       TEXT NOT NULL UNIQUE,
+    name        TEXT NOT NULL,
+    bio         TEXT,
+    avatar_url  TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE posts (
+    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    author_id     BIGINT NOT NULL REFERENCES authors(id),
+    slug          TEXT NOT NULL UNIQUE,
+    title         TEXT NOT NULL,
+    body          TEXT NOT NULL,
+    excerpt       TEXT,
+    status        TEXT NOT NULL DEFAULT 'draft'
+        CHECK (status IN ('draft', 'published', 'archived')),
+    published_at  TIMESTAMPTZ,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_posts_author ON posts (author_id);
+CREATE INDEX idx_posts_status_published ON posts (status, published_at DESC)
+    WHERE status = 'published';
+CREATE INDEX idx_posts_search ON posts USING GIN (to_tsvector('english', title || ' ' || COALESCE(body, '')));
+
+CREATE TABLE tags (
+    id    BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    slug  TEXT NOT NULL UNIQUE,
+    name  TEXT NOT NULL
+);
+
+CREATE TABLE post_tags (
+    post_id BIGINT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+    tag_id  BIGINT NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+    PRIMARY KEY (post_id, tag_id)
+);
+```
+
+### 20.4 IoT / Time-Series
+```sql
+CREATE TABLE devices (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        TEXT NOT NULL,
+    device_type TEXT NOT NULL,
+    location    JSONB,
+    metadata    JSONB DEFAULT '{}',
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Partitioned readings table for time-series
+CREATE TABLE readings (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY,
+    device_id   BIGINT NOT NULL,
+    ts          TIMESTAMPTZ NOT NULL,
+    metric      TEXT NOT NULL,
+    value       DOUBLE PRECISION NOT NULL,
+    PRIMARY KEY (id, ts)  -- ts in PK required for partitioning
+) PARTITION BY RANGE (ts);
+
+-- Create monthly partitions
+CREATE TABLE readings_2026_01 PARTITION OF readings
+    FOR VALUES FROM ('2026-01-01') TO ('2026-02-01');
+CREATE TABLE readings_2026_02 PARTITION OF readings
+    FOR VALUES FROM ('2026-02-01') TO ('2026-03-01');
+
+-- Index on each partition
+CREATE INDEX idx_readings_device_ts ON readings (device_id, ts DESC);
+```
+
+---
+
+## 21. Migration Generation Protocol
+
+When given two schemas (before / after) or asked to make a schema change, generate the migration following this protocol.
+
+### 21.1 Input Format
+
+Accept schema changes as:
+- Full `CREATE TABLE` statements (before / after)
+- Description of desired change ("add a phone column to users")
+- ALTER statements from another source
+
+### 21.2 Migration Output
+
+Every migration must include:
+
+```sql
+-- ============================================================
+-- Migration: <description>
+-- Author: database-architect
+-- Date: <date>
+-- ============================================================
+
+-- UP: Apply the change
+-- ============================================================
+BEGIN;
+    SET lock_timeout = '5s';
+
+    -- Add nullable column first
+    ALTER TABLE users ADD COLUMN phone TEXT;
+
+    -- Backfill is handled separately (see scripts/backfill.py)
+    -- ALTER TABLE users ALTER COLUMN phone SET NOT NULL;
+COMMIT;
+
+-- DOWN: Rollback
+-- ============================================================
+BEGIN;
+    ALTER TABLE users DROP COLUMN phone;
+COMMIT;
+```
+
+### 21.3 Migration Decision Matrix
+
+| Change | Up Strategy | Down Strategy | Risk |
+|--------|------------|---------------|------|
+| Add column (nullable) | `ADD COLUMN` | `DROP COLUMN` | Low |
+| Add column (NOT NULL) | Add NULL → backfill → `SET NOT NULL` | `DROP COLUMN` | Medium |
+| Rename column | Add new → dual-write → backfill → drop old | Restore old | High |
+| Change column type | Add new → dual-write → migrate → swap | Add old back | High |
+| Add index | `CREATE INDEX CONCURRENTLY` | `DROP INDEX CONCURRENTLY` | Low |
+| Drop index | `DROP INDEX CONCURRENTLY` | `CREATE INDEX` | Low |
+| Add table | `CREATE TABLE` | `DROP TABLE` | Low |
+| Drop table | Create backup → `DROP TABLE` | Restore from backup | High |
+| Add FK | `ALTER TABLE ADD CONSTRAINT` | `DROP CONSTRAINT` | Medium (table lock) |
+| Partition existing table | Create new partitioned → insert → rename | Reverse rename | Very high |
+
+### 21.4 Zero-Downtime Rules
+
+1. **Never** `ALTER TABLE ... SET NOT NULL` without backfill first
+2. **Never** drop a column on day 1 — mark as deprecated, drop N days later
+3. **Always** set `lock_timeout = '5s'` before DDL on production
+4. **Always** provide a DOWN script
+5. For large tables, use `pt-online-schema-change` (Percona) or `pgroll` (PostgreSQL)
+6. Test on a production-sized copy first
+
+### 21.5 Accompanying Scripts
+
+Reference these scripts (in `scripts/`) in generated migration output:
+- `scripts/backfill.py` for NOT NULL column backfill
+- `scripts/migration-check.sql` to run before applying
+- `scripts/diagnostics.sql` to verify after
+
+---
+
+## 22. Schema Audit Protocol
+
+When the user gives you an existing schema, automatically run this audit.
+
+### 22.1 Audit Checklist
+
+Run through every table and flag violations:
+
+```
+Table: users
+────────────────────────────────────
+□ PRIMARY KEY exists?             — ✅ id BIGINT
+□ TIMESTAMPTZ?                    — ❌ created_at TIMESTAMP → TIMESTAMPTZ
+□ Missing indexes?                — ❌ no index on email
+□ Missing NOT NULL?               — ❌ name is TEXT (nullable)
+□ Missing updated_at?             — ❌ no updated_at column
+□ FLOAT for money?                — ✅ not applicable
+□ Missing CHECK constraints?      — ❌ role TEXT with no CHECK
+□ Missing RLS?                    — ✅ RLS enabled
+□ Missing FK indexes?             — ✅ tenant_id indexed
+```
+
+### 22.2 Scoring
+
+| Score | Rating | Meaning |
+|-------|--------|---------|
+| 90-100% | 🟢 Production-ready | Minor tuning suggestions |
+| 70-89% | 🟡 Needs work | Address flagged items before production |
+| 50-69% | 🟠 Risky | Significant refactoring recommended |
+| <50% | 🔴 Redesign | Schema has fundamental issues |
+
+### 22.3 Audit Output Format
+
+```markdown
+## Schema Audit: users
+
+**Score: 72/100** 🟡 Needs work
+
+### Critical (Fix before production)
+- [ ] `created_at` uses `TIMESTAMP` — change to `TIMESTAMPTZ`
+- [ ] `email` has no unique index — login queries will degrade
+
+### Recommended
+- [ ] Add `updated_at` with `ON UPDATE` trigger
+- [ ] Add `CHECK (role IN ('admin', 'user'))` on role column
+- [ ] Add `created_at` index for time-range queries
+
+### Best Practice
+- [ ] Consider soft-delete column `deleted_at TIMESTAMPTZ`
+- [ ] Consider `EXCLUDE USING` for overlapping date ranges
+
+### Summary
+Table is functional but has 2 critical issues that will cause problems at scale.
+Estimated fix time: 30 minutes.
+```
+
+### 22.4 Automatic Actions
+
+When the user says "帮我看看这个 schema" (review my schema), the skill MUST:
+1. Run the audit checklist
+2. Generate the score
+3. Produce the audit report
+4. Offer to generate the migration that fixes all flagged issues
+
+---
+
+## Meta-Layer Invocation Examples
+
+When the user says | The skill should
+-------------------|-----------------
+"帮我设计一个电商数据库" | Run Schema Generation Protocol (§19), output SaaS schema template → customize → generate migration
+"这是我的 schema，帮我看看" | Run Schema Audit Protocol (§22), score it, produce report, offer migrations
+"给 users 表加一个 phone 字段" | Generate migration (§21) with UP + DOWN, reference backfill.py
+"把一个 5 亿行的表转成分区表" | Generate migration plan with risk assessment, reference partitioning patterns
+"从 MySQL 迁到 PostgreSQL" | Generate conversion plan with data type mapping + zero-downtime strategy
+
 ## Skill Invocation Triggers
 
 This skill activates automatically when the user mentions any of:
@@ -717,3 +1110,6 @@ This skill activates automatically when the user mentions any of:
 - Replication, read replica, high availability, failover
 - Backup, recovery, RPO, RTO, disaster recovery
 - Specific databases: PostgreSQL, MySQL, MongoDB, Redis, SQLite, etc.
+- **"帮我设计" / "帮我生成" / "生成 schema" / "生成数据库"** — triggers Schema Generation (§19)
+- **"帮我看看" / "审计" / "review" / "检查"** — triggers Schema Audit (§22)
+- **"加字段" / "改表" / "迁移" / "alter"** — triggers Migration Generation (§21)
